@@ -1,25 +1,144 @@
 // Change the API key
 var api_key = "<INSERT_MAGIC_STRING_HERE>";
 
+var date_format = "yyyy-MM-dd HH:mm:ss";
+var base_url = "https://www.toggl.com/api/v8/";
+var spr = SpreadsheetApp.getActiveSpreadsheet();
+
 function onOpen() {
-    var spr = SpreadsheetApp.getActiveSpreadsheet();
-    var menu_entries = [ {name: "Update times", functionName: "update"}                  ];
+    var menu_entries = [
+        {name: "Update times", functionName: "update"},
+        {name: "Start timer", functionName: "start"},
+        {name: "Stop timer", functionName: "stop"}
+    ];
+      
     spr.addMenu("Toggl", menu_entries);
 }
 
+function updateCell(row, entry) {
+    var sps = spr.getActiveSheet();
+    var project = api("GET", "projects/" + entry["pid"]).data;
+    entry['duration'] = entry['duration'] < 0 ? 0 : entry['duration'];
+      
+    sps.getRange(row, 1).setValue(entry['id']);
+    sps.getRange(row, 2).setValue(project['name']);
+    sps.getRange(row, 3).setValue(formatDate(entry['start'], date_format));
+    sps.getRange(row, 4).setValue(formatDate(entry['stop'], date_format));
+    sps.getRange(row, 5).setValue(entry['duration'] / 3600);
+    sps.getRange(row, 6).setValue(entry['billable']);
+    sps.getRange(row, 7).setValue(formatDate(entry['at'], date_format));
+    sps.getRange(row, 8).setValue(entry['tags'].join(", "));
+    sps.getRange(row, 9).setValue(entry['description'] || ''); 
+}
+
+function stop() {
+    var sps = spr.getActiveSheet();
+    var ct = getFirstEmptyRow();
+  
+    var entry_id = sps.getRange(ct, 1);
+    var entry_stop = sps.getRange(ct, 4).getValue();
+    if(entry_stop == "" && entry_id != "") {
+        api("PUT", "time_entries/" + entry_id + "/stop");
+        var entry = api("GET", "time_entries/" + entry_id).data;
+      
+        updateCell(ct, entry);
+    }
+}
+      
+function start() {
+      var workspaces = api("GET", "workspaces");
+      
+      var data = [];
+      for(var i = 0; i < workspaces.length; i++) {
+          data.push({
+              "name": workspaces[i].name,
+              "value": workspaces[i].id
+          });
+      }
+  
+      modal("Select workspace", "workspace", null, null, data);
+}
+
+function doPost(event) {
+    var app = UiApp.getActiveApplication();
+  
+    var workspace = event.parameter.workspace;
+    if(workspace != undefined) {
+        var projects = api("GET", "workspaces/" + workspace + "/projects");
+      
+        var data = [];
+        for(var i = 0; i < projects.length; i++) {
+            data.push({
+                "name": projects[i].name,
+                "value": projects[i].id
+            });
+        }
+      
+        modal("Select project", "project", "Description:", "description", data);
+    }  
+  
+    var project = event.parameter.project;
+    if(project) {
+      var description = event.parameter.description || "";
+      
+        var data = {
+            "time_entry": {
+                "description": description,
+                "tags": ["excel"],
+                "pid": project
+            }
+        };
+      
+        api("POST", "time_entries/start", data);
+    }
+  
+    return app.close();
+}
+      
+function modal(title, radiobutton_name, textbox_title, textbox_name, data) {
+      var app = UiApp.createApplication();
+      app.setTitle(title);
+      app.setWidth(250);
+      app.setHeight(300);
+      
+      var form_content = app.createGrid();
+      form_content.resize(14, 3);
+      
+      for(var i = 0; i < data.length; i++) {
+          var radio_button = app.createRadioButton(radiobutton_name, data[i].name);
+          radio_button.setFormValue(data[i].value);
+          form_content.setWidget(i, 0, radio_button);
+      }
+  
+      if(textbox_name) {
+          var label = app.createLabel(textbox_title);
+          form_content.setWidget(9, 0, label);
+    
+          var textbox = app.createTextBox().setName(textbox_name); 
+          form_content.setWidget(10, 0, textbox);
+      }
+  
+      var button = app.createSubmitButton("Select");
+      form_content.setWidget(12, 0, button);
+  
+      var form = app.createFormPanel().setId('form').setEncoding('multipart/form-data');
+      form.add(form_content);
+      
+      app.add(form);
+      spr.show(app);
+}
+      
 function update() {
+    var entries = api("GET", "time_entries");
   
-    var format = "yyyy-MM-dd HH:mm:ss";
-    var entries = api("time_entries");
-  
-    var spr = SpreadsheetApp.getActiveSheet();
+    var sps = spr.getActiveSheet();
     var ct = getFirstEmptyRow();
   
     var ct_decr = 0;
     var latest_id = "";
     while(latest_id == "" && ct_decr <= ct) {
-      ct_decr++;
-      latest_id = spr.getRange(ct - ct_decr, 1).getValue();
+        ct_decr++;
+        latest_id = sps.getRange(ct - ct_decr, 1).getValue();
     }
     
     var list = [];
@@ -32,34 +151,26 @@ function update() {
     }
      
     for(var i = 0; i < list.length; i++) {
-        var project = api("projects/" + list[i]["pid"]).data;
-      
-        list[i]['duration'] = list[i]['duration'] < 0 ? 0 : list[i]['duration'];
-      
-        spr.getRange(ct + i, 1).setValue(list[i]['id']);
-        spr.getRange(ct + i, 2).setValue(project['name']);
-        spr.getRange(ct + i, 3).setValue(formatDate(list[i]['start'], format));
-        spr.getRange(ct + i, 4).setValue(formatDate(list[i]['stop'], format));
-        spr.getRange(ct + i, 5).setValue(list[i]['duration'] / 3600);
-        spr.getRange(ct + i, 6).setValue(list[i]['billable']);
-        spr.getRange(ct + i, 7).setValue(formatDate(list[i]['at'], format));
-        spr.getRange(ct + i, 8).setValue(list[i]['tags'].join(", "));
-        spr.getRange(ct + i, 9).setValue(list[i]['description'] || '');
+        updateCell(ct + i, list[i]);
     }
-
 }
 
-function api(url) {
+function api(method, url, data) {
     var digest = Utilities.base64Encode(api_key + ":api_token");
     var digestfull = "Basic " + digest;
 
-    var response = UrlFetchApp.fetch("https://www.toggl.com/api/v8/" + url, {
-        method: "get",
+    var options = {
+        method: method,
         headers: {
             "Authorization": digestfull,
         }
-    });
-  
+    };
+
+    if(data != undefined) {
+        options["payload"] = data;
+    }
+
+    var response = UrlFetchApp.fetch(base_url + url, options);
     return Utilities.jsonParse(response.getContentText());
 }
 
@@ -76,7 +187,6 @@ function isoToDate(dateStr){
 }
 
 function getFirstEmptyRow() {
-    var spr = SpreadsheetApp.getActiveSpreadsheet();
     var column = spr.getRange('A:A');
     var values = column.getValues(); // get all data in one call
   
