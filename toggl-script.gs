@@ -1,5 +1,5 @@
 // Change the API key
-var api_key = "b5b57917299dc9e0bf8b294f96fa9027";
+var api_key = "<INSERT_MAGIC_STRING_HERE>";
 
 function onOpen() {
     var spr = SpreadsheetApp.getActiveSpreadsheet();
