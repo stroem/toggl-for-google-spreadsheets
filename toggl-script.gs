@@ -17,17 +17,23 @@ function onOpen() {
 
 function updateCell(row, entry) {
     var sps = spr.getActiveSheet();
-    var project = api("GET", "projects/" + entry["pid"]).data;
+    
+    if(entry["pid"] != undefined){
+        var project_name = api("GET", "projects/" + entry["pid"]).data.name;
+    }else{
+        var project_name = '';
+    }
+    
     entry['duration'] = entry['duration'] < 0 ? 0 : entry['duration'];
       
     sps.getRange(row, 1).setValue(entry['id']);
-    sps.getRange(row, 2).setValue(project['name']);
+    sps.getRange(row, 2).setValue(project_name);
     sps.getRange(row, 3).setValue(formatDate(entry['start'], date_format));
     sps.getRange(row, 4).setValue(formatDate(entry['stop'], date_format));
     sps.getRange(row, 5).setValue(entry['duration'] / 3600);
     sps.getRange(row, 6).setValue(entry['billable']);
     sps.getRange(row, 7).setValue(formatDate(entry['at'], date_format));
-    sps.getRange(row, 8).setValue(entry['tags'].join(", "));
+    sps.getRange(row, 8).setValue(entry['tags'] ? entry['tags'].join(", ") : "");
     sps.getRange(row, 9).setValue(entry['description'] || ''); 
 }
 
